@@ -60,7 +60,16 @@ async function poll() {
         if (cq.data === 'luna' || cq.data === 'juliaa') {
           userState[userId] = { step: 'waiting_name', canal: cq.data };
           const label = cq.data === 'luna' ? '🍓 Luna' : '💜 Juliaa';
-          await send(userId, `${label} ✅\n\nTape le nom du lien :\n_(ex: tiktok\\_va1\\_juin)_`);
+
+          // Remplace le message avec les boutons par la confirmation (retire le clavier)
+          await api('editMessageText', {
+            chat_id: cq.message.chat.id,
+            message_id: cq.message.message_id,
+            text: `🔗 *Nouveau lien de tracking*\n\nCanal sélectionné : ${label} ✅`,
+            parse_mode: 'Markdown'
+          });
+
+          await send(userId, `Tape le nom du lien :\n_(ex: tiktok\\_lunarss\\_ali\\_noctis)_`);
         }
         continue;
       }
