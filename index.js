@@ -83,8 +83,28 @@ async function poll() {
           'Crée des liens de tracking pour les canaux Telegram.\n\n' +
           '📋 *Commandes :*\n' +
           '• /newlink — créer un nouveau lien\n' +
+          '• /template — voir le format des noms\n' +
           '• /listlinks — voir les liens récents\n' +
           '• /cancel — annuler'
+        );
+        continue;
+      }
+
+      // /template
+      if (text === '/template') {
+        await send(userId,
+          '📋 *Format des noms de liens*\n\n' +
+          '`source_compte_outil_va`\n\n' +
+          '*Exemples :*\n' +
+          '• `tiktok_lunarss_ali_noctis`\n' +
+          '• `tiktok_lunarss_ali_arsenne`\n' +
+          '• `instagram_lunaqtxr_ali_noctis`\n' +
+          '• `twitter_lunarss_geelark_arsenne`\n\n' +
+          '*Règles :*\n' +
+          '— tout en minuscules\n' +
+          '— underscores uniquement, pas d\'espaces\n' +
+          '— `ali` ou `geelark` selon l\'outil utilisé\n' +
+          '— prénom du VA en dernier'
         );
         continue;
       }
