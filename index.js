@@ -10,6 +10,13 @@ const ALLOWED_IDS = (process.env.ALLOWED_IDS || '')
 const CHANNELS = {
   luna:   process.env.LUNA_CHANNEL_ID,
   juliaa: process.env.JULIA_CHANNEL_ID,
+  sophia: process.env.SOPHIA_CHANNEL_ID,
+};
+
+const LABELS = {
+  luna:   '🍓 Luna',
+  juliaa: '💜 Juliaa',
+  sophia: '🩵 Sophia',
 };
 
 const userState = {};
@@ -57,9 +64,9 @@ async function poll() {
         await api('answerCallbackQuery', { callback_query_id: cq.id });
         if (!ALLOWED_IDS.includes(userId)) continue;
 
-        if (cq.data === 'luna' || cq.data === 'juliaa') {
+        if (CHANNELS[cq.data]) {
           userState[userId] = { step: 'waiting_name', canal: cq.data };
-          const label = cq.data === 'luna' ? '🍓 Luna' : '💜 Juliaa';
+          const label = LABELS[cq.data];
 
           // Remplace le message avec les boutons par la confirmation (retire le clavier)
           await api('editMessageText', {
@@ -122,9 +129,9 @@ async function poll() {
       if (text === '/newlink') {
         userState[userId] = { step: 'waiting_canal' };
 
-        const buttons = [];
-        if (CHANNELS.luna)   buttons.push({ text: '🍓 Luna',   callback_data: 'luna'   });
-        if (CHANNELS.juliaa) buttons.push({ text: '💜 Juliaa', callback_data: 'juliaa' });
+        const buttons = Object.entries(CHANNELS)
+          .filter(([, id]) => id)
+          .map(([key]) => ({ text: LABELS[key], callback_data: key }));
 
         if (buttons.length === 0) {
           await send(userId, '❌ Aucun canal configuré. Contacte l\'admin pour ajouter `LUNA_CHANNEL_ID` dans Railway.');
@@ -133,10 +140,9 @@ async function poll() {
 
         // Si un seul canal configuré, skip la sélection
         if (buttons.length === 1) {
-          const canal = CHANNELS.luna ? 'luna' : 'juliaa';
+          const canal = buttons[0].callback_data;
           userState[userId] = { step: 'waiting_name', canal };
-          const label = canal === 'luna' ? '🍓 Luna' : '💜 Juliaa';
-          await send(userId, `🔗 *Nouveau lien — ${label}*\n\nTape le nom du lien :\n_(ex: tiktok\\_va1\\_juin)_`);
+          await send(userId, `🔗 *Nouveau lien — ${LABELS[canal]}*\n\nTape le nom du lien :\n_(ex: tiktok\\_va1\\_juin)_`);
           continue;
         }
 
@@ -159,7 +165,7 @@ async function poll() {
         );
         let msg2 = '📋 *Liens principaux :*\n\n';
         results.forEach(r => {
-          const label = r.model === 'luna' ? '🍓 Luna' : '💜 Juliaa';
+          const label = LABELS[r.model] || r.model;
           msg2 += `${label}: \`${r.link}\`\n`;
         });
         await send(userId, msg2);
@@ -188,7 +194,7 @@ async function poll() {
           if (!result.ok) throw new Error(result.description);
 
           const link  = result.result.invite_link;
-          const label = state.canal === 'luna' ? '🍓 Luna' : '💜 Juliaa';
+          const label = LABELS[state.canal];
 
           await send(userId,
             `✅ *Lien créé !*\n\n` +
