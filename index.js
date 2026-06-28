@@ -20,6 +20,7 @@ const LABELS = {
 };
 
 const userState = {};
+const processedMessages = new Set();
 let offset = 0;
 
 // ─── API TELEGRAM ────────────────────────────────────────────────────────────
@@ -138,6 +139,14 @@ async function poll() {
 
       if (!update.message) continue;
       const msg    = update.message;
+
+      if (processedMessages.has(msg.message_id)) continue;
+      processedMessages.add(msg.message_id);
+      if (processedMessages.size > 500) {
+        const arr = [...processedMessages];
+        arr.splice(0, 250).forEach(id => processedMessages.delete(id));
+      }
+
       const userId = msg.from.id;
       const text   = (msg.text || '').trim();
 
@@ -318,4 +327,10 @@ console.log('🔗 ALX Link Bot démarré');
 console.log('👥 IDs autorisés:', ALLOWED_IDS.length ? ALLOWED_IDS.join(', ') : 'AUCUN — configure ALLOWED_IDS');
 console.log('📢 Canaux:', Object.entries(CHANNELS).filter(([,v])=>v).map(([k])=>k).join(', ') || 'AUCUN');
 
-setInterval(poll, 2000);
+async function loop() {
+  while (true) {
+    await poll();
+    await new Promise(r => setTimeout(r, 1000));
+  }
+}
+loop();
