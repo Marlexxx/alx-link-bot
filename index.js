@@ -20,7 +20,6 @@ const LABELS = {
 };
 
 const userState = {};
-const processedMessages = new Set();
 let offset = 0;
 
 // ─── API TELEGRAM ────────────────────────────────────────────────────────────
@@ -65,88 +64,25 @@ async function poll() {
         await api('answerCallbackQuery', { callback_query_id: cq.id });
         if (!ALLOWED_IDS.includes(userId)) continue;
 
-        const state = userState[userId] || {};
-
-        // Étape 1 : sélection du canal
         if (CHANNELS[cq.data]) {
-          userState[userId] = { step: 'waiting_support', canal: cq.data };
+          userState[userId] = { step: 'waiting_name', canal: cq.data };
           const label = LABELS[cq.data];
 
+          // Remplace le message avec les boutons par la confirmation (retire le clavier)
           await api('editMessageText', {
             chat_id: cq.message.chat.id,
             message_id: cq.message.message_id,
-            text: `🔗 *Nouveau lien de tracking*\n\nCanal : ${label} ✅`,
+            text: `🔗 *Nouveau lien de tracking*\n\nCanal sélectionné : ${label} ✅`,
             parse_mode: 'Markdown'
           });
 
-          await send(userId, '📱 *Quel support ?*', {
-            reply_markup: { inline_keyboard: [
-              [{ text: '🔵 Ali Remote', callback_data: 'support_ali' }],
-              [{ text: '🟢 Iremotech', callback_data: 'support_iremotech' }],
-              [{ text: '⚪ Autre (saisie libre)', callback_data: 'support_autre' }]
-            ]}
-          });
+          await send(userId, `Tape le nom du lien :\n_(ex: tiktok\\_lunarss\\_ali\\_noctis)_`);
         }
-
-        // Étape 2 : sélection du support
-        else if (cq.data.startsWith('support_')) {
-          const support = cq.data.replace('support_', '');
-          userState[userId] = { ...state, support };
-
-          const supportLabel = support === 'ali' ? '🔵 Ali Remote' : support === 'iremotech' ? '🟢 Iremotech' : '⚪ Autre';
-
-          await api('editMessageText', {
-            chat_id: cq.message.chat.id,
-            message_id: cq.message.message_id,
-            text: `📱 Support : ${supportLabel} ✅`,
-            parse_mode: 'Markdown'
-          });
-
-          if (support === 'autre') {
-            userState[userId].step = 'waiting_name';
-            await send(userId, '✏️ Tape le nom complet du lien de tracking :\n_(ex: tiktok\\_lunarss\\_ali\\_noctis)_');
-          } else {
-            userState[userId].step = 'waiting_source';
-            await send(userId, '📲 *Quelle source de trafic ?*', {
-              reply_markup: { inline_keyboard: [
-                [{ text: '📷 Instagram', callback_data: 'source_insta' }],
-                [{ text: '🧵 Thread', callback_data: 'source_thread' }],
-                [{ text: '📘 Facebook', callback_data: 'source_facebook' }]
-              ]}
-            });
-          }
-        }
-
-        // Étape 3 : sélection de la source (insta/thread/facebook)
-        else if (cq.data.startsWith('source_')) {
-          const source = cq.data.replace('source_', '');
-          userState[userId] = { ...state, source, step: 'waiting_compte' };
-
-          const sourceLabel = source === 'insta' ? '📷 Instagram' : source === 'thread' ? '🧵 Thread' : '📘 Facebook';
-
-          await api('editMessageText', {
-            chat_id: cq.message.chat.id,
-            message_id: cq.message.message_id,
-            text: `📲 Source : ${sourceLabel} ✅`,
-            parse_mode: 'Markdown'
-          });
-
-          await send(userId, '👤 *Tape le nom du compte :*\n_(ex: lunafd, lunaqtxr, lunarss...)_');
-        }
-
         continue;
       }
 
       if (!update.message) continue;
       const msg    = update.message;
-
-      if (processedMessages.has(msg.message_id)) continue;
-      processedMessages.add(msg.message_id);
-      if (processedMessages.size > 500) {
-        const arr = [...processedMessages];
-        arr.splice(0, 250).forEach(id => processedMessages.delete(id));
-      }
-
       const userId = msg.from.id;
       const text   = (msg.text || '').trim();
 
@@ -174,18 +110,17 @@ async function poll() {
       if (text === '/template') {
         await send(userId,
           '📋 *Format des noms de liens*\n\n' +
-          '`source_support_compte_va`\n\n' +
-          '*Exemples (Ali Remote) :*\n' +
-          '• `insta_ali_lunafd_arsenne`\n' +
-          '• `facebook_ali_lunapage_noctis`\n' +
-          '• `thread_ali_lunaqtxr_arsenne`\n\n' +
-          '*Exemples (Iremotech) :*\n' +
-          '• `insta_iremotech_lunafd_noctis`\n' +
-          '• `facebook_iremotech_lunapage_arsenne`\n\n' +
+          '`source_compte_outil_va`\n\n' +
+          '*Exemples :*\n' +
+          '• `tiktok_lunarss_ali_noctis`\n' +
+          '• `tiktok_lunarss_ali_arsenne`\n' +
+          '• `instagram_lunaqtxr_ali_noctis`\n' +
+          '• `twitter_lunarss_geelark_arsenne`\n\n' +
           '*Règles :*\n' +
-          '— tout en minuscules, pas d\'espaces\n' +
-          '— format : source\\_support\\_compte\\_va\n' +
-          '— le bot génère le nom automatiquement'
+          '— tout en minuscules\n' +
+          '— underscores uniquement, pas d\'espaces\n' +
+          '— `ali` ou `geelark` selon l\'outil utilisé\n' +
+          '— prénom du VA en dernier'
         );
         continue;
       }
@@ -203,17 +138,11 @@ async function poll() {
           continue;
         }
 
-        // Si un seul canal configuré, skip la sélection → passe au support
+        // Si un seul canal configuré, skip la sélection
         if (buttons.length === 1) {
           const canal = buttons[0].callback_data;
-          userState[userId] = { step: 'waiting_support', canal };
-          await send(userId, `🔗 *Nouveau lien — ${LABELS[canal]}*\n\n📱 *Quel support ?*`, {
-            reply_markup: { inline_keyboard: [
-              [{ text: '🔵 Ali Remote', callback_data: 'support_ali' }],
-              [{ text: '🟢 Iremotech', callback_data: 'support_iremotech' }],
-              [{ text: '⚪ Autre (saisie libre)', callback_data: 'support_autre' }]
-            ]}
-          });
+          userState[userId] = { step: 'waiting_name', canal };
+          await send(userId, `🔗 *Nouveau lien — ${LABELS[canal]}*\n\nTape le nom du lien :\n_(ex: tiktok\\_va1\\_juin)_`);
           continue;
         }
 
@@ -225,6 +154,7 @@ async function poll() {
 
       // /listlinks
       if (text === '/listlinks') {
+        // Récupère les liens depuis Telegram directement
         const results = await Promise.all(
           Object.entries(CHANNELS)
             .filter(([, id]) => id)
@@ -249,76 +179,51 @@ async function poll() {
         continue;
       }
 
-      // Étapes texte
+      // Nom du lien
       const state = userState[userId];
-      if (!state) {
-        await send(userId, 'Tape /start pour voir les commandes.');
-        continue;
-      }
-
-      // Étape : nom du compte (ali/iremotech flow)
-      if (state.step === 'waiting_compte') {
-        userState[userId] = { ...state, compte: text.replace(/\s+/g, '').toLowerCase(), step: 'waiting_va' };
-        await send(userId, '🧑‍💼 *Tape le nom du VA :*\n_(ex: arsenne, noctis...)_');
-        continue;
-      }
-
-      // Étape : nom du VA → génération automatique du lien
-      if (state.step === 'waiting_va') {
-        const va = text.replace(/\s+/g, '').toLowerCase();
-        const sourceName = `${state.source}_${state.support === 'iremotech' ? 'iremotech' : 'ali'}_${state.compte}_${va}`;
-
-        await createLink(userId, state.canal, sourceName, msg);
-        continue;
-      }
-
-      // Étape : saisie libre (support "autre")
-      if (state.step === 'waiting_name') {
+      if (state && state.step === 'waiting_name') {
         const sourceName = text.replace(/\s+/g, '_').toLowerCase();
-        await createLink(userId, state.canal, sourceName, msg);
+        const channelId  = CHANNELS[state.canal];
+
+        try {
+          const result = await api('createChatInviteLink', {
+            chat_id: channelId,
+            name: sourceName,
+            creates_join_request: true
+          });
+
+          if (!result.ok) throw new Error(result.description);
+
+          const link  = result.result.invite_link;
+          const label = LABELS[state.canal];
+
+          await send(userId,
+            `✅ *Lien créé !*\n\n` +
+            `🔗 \`${link}\`\n` +
+            `📌 Source : \`${sourceName}\`\n` +
+            `👤 Canal : ${label}\n\n` +
+            `_Partage ce lien — les subs qui le rejoignent via ce lien seront comptés séparément dans Telegram._`
+          );
+
+          console.log(`✅ Lien créé: ${sourceName} (${state.canal}) par ${msg.from.username || userId}`);
+
+        } catch (err) {
+          await send(userId,
+            `❌ Erreur : ${err.message}\n\n` +
+            `Vérifie que le bot est admin du canal avec la permission *"Inviter des utilisateurs"*.`
+          );
+        }
+
+        delete userState[userId];
         continue;
       }
 
+      // Message inconnu
       await send(userId, 'Tape /start pour voir les commandes.');
-      continue;
-
     }
   } catch (err) {
     console.error('Erreur poll:', err.message);
   }
-}
-
-async function createLink(userId, canal, sourceName, msg) {
-  const channelId = CHANNELS[canal];
-  try {
-    const result = await api('createChatInviteLink', {
-      chat_id: channelId,
-      name: sourceName
-    });
-
-    if (!result.ok) throw new Error(result.description);
-
-    const link  = result.result.invite_link;
-    const label = LABELS[canal];
-
-    await send(userId,
-      `✅ *Lien créé !*\n\n` +
-      `🔗 \`${link}\`\n` +
-      `📌 Source : \`${sourceName}\`\n` +
-      `👤 Canal : ${label}\n\n` +
-      `_Partage ce lien — les subs seront trackés automatiquement._`
-    );
-
-    console.log(`✅ Lien créé: ${sourceName} (${canal}) par ${msg.from.username || userId}`);
-
-  } catch (err) {
-    await send(userId,
-      `❌ Erreur : ${err.message}\n\n` +
-      `Vérifie que le bot est admin du canal avec la permission *"Inviter des utilisateurs"*.`
-    );
-  }
-
-  delete userState[userId];
 }
 
 // ─── START ────────────────────────────────────────────────────────────────────
@@ -327,10 +232,4 @@ console.log('🔗 ALX Link Bot démarré');
 console.log('👥 IDs autorisés:', ALLOWED_IDS.length ? ALLOWED_IDS.join(', ') : 'AUCUN — configure ALLOWED_IDS');
 console.log('📢 Canaux:', Object.entries(CHANNELS).filter(([,v])=>v).map(([k])=>k).join(', ') || 'AUCUN');
 
-async function loop() {
-  while (true) {
-    await poll();
-    await new Promise(r => setTimeout(r, 1000));
-  }
-}
-loop();
+setInterval(poll, 2000);
