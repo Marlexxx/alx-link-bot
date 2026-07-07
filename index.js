@@ -329,6 +329,10 @@ console.log('👥 IDs autorisés:', ALLOWED_IDS.length ? ALLOWED_IDS.join(', ') 
 console.log('📢 Canaux:', Object.entries(CHANNELS).filter(([,v])=>v).map(([k])=>k).join(', ') || 'AUCUN');
 
 async function loop() {
+  const wb = await api('deleteWebhook', { drop_pending_updates: false });
+  if (wb.ok) console.log('🌐 Webhook supprimé — polling actif');
+  else console.error('⚠️ deleteWebhook échoué:', wb.description);
+
   while (true) {
     await poll();
     await new Promise(r => setTimeout(r, 1000));
