@@ -13,6 +13,13 @@ const CHANNELS = {
   sophia: process.env.SOPHIA_CHANNEL_ID,
 };
 
+// Canaux Twitter (séparés) — utilisés quand le support est AdsPower
+const TWITTER_CHANNELS = {
+  luna:   process.env.LUNA_TWITTER_CHANNEL_ID,
+  juliaa: process.env.JULIA_TWITTER_CHANNEL_ID,
+  sophia: process.env.SOPHIA_TWITTER_CHANNEL_ID,
+};
+
 const LABELS = {
   luna:   '🍓 Luna',
   juliaa: '💜 Juliaa',
@@ -284,6 +291,7 @@ async function poll() {
             reply_markup: { inline_keyboard: [
               [{ text: '🔵 Ali Remote', callback_data: 'support_ali' }],
               [{ text: '🟢 Iremotech', callback_data: 'support_iremotech' }],
+              [{ text: '🐦 AdsPower (Twitter)', callback_data: 'support_adspower' }],
               [{ text: '⚪ Autre (saisie libre)', callback_data: 'support_autre' }]
             ]}
           });
@@ -294,7 +302,7 @@ async function poll() {
           const support = cq.data.replace('support_', '');
           userState[userId] = { ...state, support };
 
-          const supportLabel = support === 'ali' ? '🔵 Ali Remote' : support === 'iremotech' ? '🟢 Iremotech' : '⚪ Autre';
+          const supportLabel = support === 'ali' ? '🔵 Ali Remote' : support === 'iremotech' ? '🟢 Iremotech' : support === 'adspower' ? '🐦 AdsPower (Twitter)' : '⚪ Autre';
 
           await api('editMessageText', {
             chat_id: cq.message.chat.id,
@@ -306,6 +314,16 @@ async function poll() {
           if (support === 'autre') {
             userState[userId].step = 'waiting_name';
             await send(userId, '✏️ Tape le nom complet du lien de tracking :\n_(ex: tiktok\\_lunarss\\_ali\\_noctis)_');
+          } else if (support === 'adspower') {
+            // AdsPower = Twitter : canal Twitter dédié, source fixée à "twitter"
+            const twChannel = TWITTER_CHANNELS[state.canal];
+            if (!twChannel) {
+              await send(userId, `❌ Canal Twitter non configuré pour ${LABELS[state.canal]}.\nAjoute la variable \`${state.canal.toUpperCase()}_TWITTER_CHANNEL_ID\` sur Railway.`);
+              delete userState[userId];
+              continue;
+            }
+            userState[userId] = { ...userState[userId], source: 'twitter', step: 'waiting_compte' };
+            await send(userId, '👤 *Tape le nom du compte Twitter :*\n_(ex: onlychat, lunasobre...)_');
           } else {
             userState[userId].step = 'waiting_source';
             await send(userId, '📲 *Quelle source de trafic ?*', {
@@ -471,6 +489,7 @@ async function poll() {
             reply_markup: { inline_keyboard: [
               [{ text: '🔵 Ali Remote', callback_data: 'support_ali' }],
               [{ text: '🟢 Iremotech', callback_data: 'support_iremotech' }],
+              [{ text: '🐦 AdsPower (Twitter)', callback_data: 'support_adspower' }],
               [{ text: '⚪ Autre (saisie libre)', callback_data: 'support_autre' }]
             ]}
           });
@@ -485,17 +504,19 @@ async function poll() {
 
       // /listlinks
       if (text === '/listlinks') {
+        const entries = [
+          ...Object.entries(CHANNELS).filter(([, id]) => id).map(([model, id]) => ({ model, id, twitter: false })),
+          ...Object.entries(TWITTER_CHANNELS).filter(([, id]) => id).map(([model, id]) => ({ model, id, twitter: true })),
+        ];
         const results = await Promise.all(
-          Object.entries(CHANNELS)
-            .filter(([, id]) => id)
-            .map(async ([model, channelId]) => {
-              const r = await api('exportChatInviteLink', { chat_id: channelId });
-              return { model, link: r.ok ? r.result : 'N/A' };
-            })
+          entries.map(async ({ model, id, twitter }) => {
+            const r = await api('exportChatInviteLink', { chat_id: id });
+            return { model, twitter, link: r.ok ? r.result : 'N/A' };
+          })
         );
         let msg2 = '📋 *Liens principaux :*\n\n';
         results.forEach(r => {
-          const label = LABELS[r.model] || r.model;
+          const label = (LABELS[r.model] || r.model) + (r.twitter ? ' 🐦 Twitter' : '');
           msg2 += `${label}: \`${r.link}\`\n`;
         });
         await send(userId, msg2);
@@ -523,14 +544,15 @@ async function poll() {
 
       if (state.step === 'waiting_va') {
         const va = text.replace(/\s+/g, '').toLowerCase();
-        const sourceName = `${state.source}_${state.support === 'iremotech' ? 'ir' : 'ali'}_${state.compte}_${va}`;
-        await createLink(userId, state.canal, sourceName, msg);
+        const supportTag = state.support === 'iremotech' ? 'ir' : state.support === 'adspower' ? 'adspower' : 'ali';
+        const sourceName = `${state.source}_${supportTag}_${state.compte}_${va}`;
+        await createLink(userId, state.canal, sourceName, msg, state.support);
         continue;
       }
 
       if (state.step === 'waiting_name') {
         const sourceName = text.replace(/\s+/g, '_').toLowerCase();
-        await createLink(userId, state.canal, sourceName, msg);
+        await createLink(userId, state.canal, sourceName, msg, state.support);
         continue;
       }
 
@@ -541,8 +563,19 @@ async function poll() {
   }
 }
 
-async function createLink(userId, canal, sourceName, msg) {
-  const channelId = CHANNELS[canal];
+async function createLink(userId, canal, sourceName, msg, support) {
+  const isTwitter = support === 'adspower';
+  const channelId = isTwitter ? TWITTER_CHANNELS[canal] : CHANNELS[canal];
+
+  if (!channelId) {
+    await send(userId,
+      `❌ Canal ${isTwitter ? 'Twitter ' : ''}non configuré pour ${LABELS[canal]}.\n` +
+      `Ajoute la variable \`${canal.toUpperCase()}${isTwitter ? '_TWITTER' : ''}_CHANNEL_ID\` sur Railway.`
+    );
+    delete userState[userId];
+    return;
+  }
+
   try {
     const result = await api('createChatInviteLink', {
       chat_id: channelId,
@@ -553,7 +586,7 @@ async function createLink(userId, canal, sourceName, msg) {
     if (!result.ok) throw new Error(result.description);
 
     const link = result.result.invite_link;
-    const label = LABELS[canal];
+    const label = LABELS[canal] + (isTwitter ? ' 🐦 Twitter' : '');
 
     await send(userId,
       `✅ *Lien créé !*\n\n` +
@@ -583,6 +616,7 @@ async function start() {
   console.log('🔗 ALX Link Bot démarré');
   console.log('👑 Admins:', ADMIN_IDS.length ? ADMIN_IDS.join(', ') : 'AUCUN — configure ADMIN_IDS');
   console.log('📢 Canaux:', Object.entries(CHANNELS).filter(([,v]) => v).map(([k]) => k).join(', ') || 'AUCUN');
+  console.log('🐦 Canaux Twitter:', Object.entries(TWITTER_CHANNELS).filter(([,v]) => v).map(([k]) => k).join(', ') || 'AUCUN');
 
   const wb = await api('deleteWebhook', { drop_pending_updates: false });
   if (wb.ok) console.log('🌐 Webhook supprimé — polling actif');
