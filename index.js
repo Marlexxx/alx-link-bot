@@ -588,7 +588,7 @@ async function poll() {
 
       // Twitter (AdsPower) : nom du VA → choix posteur / chatteur
       if (state.step === 'waiting_va_twitter') {
-        const va = text.replace(/\s+/g, ' ').trim();
+        const va = text.replace(/\s+/g, ' ').trim().toLowerCase();
         userState[userId] = { ...state, va, step: 'waiting_role' };
         await send(userId, '👥 *Le VA est :*', {
           reply_markup: { inline_keyboard: [
