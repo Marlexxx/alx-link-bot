@@ -608,8 +608,29 @@ async function poll() {
       if (state.step === 'waiting_va') {
         const va = text.replace(/\s+/g, '').toLowerCase();
         const supportTag = state.support === 'iremotech' ? 'ir' : 'ali';
-        const sourceName = `${state.source}_${supportTag}_${state.compte}_${va}`;
-        await createLink(userId, state.canal, sourceName, msg, state.support);
+        let compte = state.compte;
+        let note = '';
+        let sourceName = `${state.source}_${supportTag}_${compte}_${va}`;
+
+        // Limite Telegram : 32 caractères. On raccourcit le COMPTE (milieu),
+        // jamais le VA (dernier) ni l'agence — pour que les récaps le lisent toujours.
+        if (sourceName.length > 32) {
+          const room = 32 - (state.source.length + supportTag.length + va.length + 3); // 3 underscores
+          if (room >= 1) {
+            compte = compte.slice(0, room);
+            sourceName = `${state.source}_${supportTag}_${compte}_${va}`;
+            note = `\n\n⚠️ _Compte raccourci en_ \`${compte}\` _(limite Telegram 32 car — le VA est préservé)._`;
+          } else {
+            await send(userId,
+              `❌ Le nom \`${sourceName}\` fait ${sourceName.length} caractères (max 32 sur Telegram) ` +
+              `et reste trop long même sans le compte.\nRaccourcis le nom du VA (\`${va}\`).`
+            );
+            delete userState[userId];
+            continue;
+          }
+        }
+
+        await createLink(userId, state.canal, sourceName, msg, state.support, note);
         continue;
       }
 
@@ -626,7 +647,7 @@ async function poll() {
   }
 }
 
-async function createLink(userId, canal, sourceName, msg, support) {
+async function createLink(userId, canal, sourceName, msg, support, note = '') {
   const isTwitter = support === 'adspower';
   const channelId = isTwitter ? TWITTER_CHANNELS[canal] : CHANNELS[canal];
 
@@ -634,6 +655,16 @@ async function createLink(userId, canal, sourceName, msg, support) {
     await send(userId,
       `❌ Canal ${isTwitter ? 'Twitter ' : ''}non configuré pour ${LABELS[canal]}.\n` +
       `Ajoute la variable \`${canal.toUpperCase()}${isTwitter ? '_TWITTER' : ''}_CHANNEL_ID\` sur Railway.`
+    );
+    delete userState[userId];
+    return;
+  }
+
+  // Garde-fou final : Telegram coupe les noms > 32 car (cas "Autre" ou Twitter long)
+  if (sourceName.length > 32) {
+    await send(userId,
+      `⚠️ Le nom \`${sourceName}\` fait ${sourceName.length} caractères — Telegram limite à 32 ` +
+      `et coupera la fin (le VA).\nRaccourcis le nom avant de réessayer.`
     );
     delete userState[userId];
     return;
@@ -656,7 +687,8 @@ async function createLink(userId, canal, sourceName, msg, support) {
       `🔗 \`${link}\`\n` +
       `📌 Source : \`${sourceName}\`\n` +
       `👤 Canal : ${label}\n\n` +
-      `_Partage ce lien — les subs seront trackés automatiquement._`
+      `_Partage ce lien — les subs seront trackés automatiquement._` +
+      note
     );
 
     console.log(`✅ Lien créé: ${sourceName} (${canal}) par ${msg.from.username || userId}`);
