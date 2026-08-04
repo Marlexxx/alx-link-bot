@@ -315,15 +315,15 @@ async function poll() {
             userState[userId].step = 'waiting_name';
             await send(userId, '✏️ Tape le nom complet du lien de tracking :\n_(ex: tiktok\\_lunarss\\_ali\\_noctis)_');
           } else if (support === 'adspower') {
-            // AdsPower = Twitter : canal Twitter dédié, source fixée à "twitter"
+            // AdsPower = Twitter : canal Twitter dédié
             const twChannel = TWITTER_CHANNELS[state.canal];
             if (!twChannel) {
               await send(userId, `❌ Canal Twitter non configuré pour ${LABELS[state.canal]}.\nAjoute la variable \`${state.canal.toUpperCase()}_TWITTER_CHANNEL_ID\` sur Railway.`);
               delete userState[userId];
               continue;
             }
-            userState[userId] = { ...userState[userId], source: 'twitter', step: 'waiting_compte' };
-            await send(userId, '👤 *Tape le nom du compte Twitter :*\n_(ex: onlychat, lunasobre...)_');
+            userState[userId] = { ...userState[userId], source: 'twitter', step: 'waiting_va_twitter' };
+            await send(userId, '🧑‍💼 *Tape le nom du VA :*\n_(ex: waldi, arsenne...)_');
           } else {
             userState[userId].step = 'waiting_source';
             await send(userId, '📲 *Quelle source de trafic ?*', {
@@ -351,6 +351,56 @@ async function poll() {
           });
 
           await send(userId, '👤 *Tape le nom du compte :*\n_(ex: lunafd, lunaqtxr, lunarss...)_');
+        }
+
+        // Rôle du VA Twitter (posteur / chatteur)
+        else if (cq.data === 'role_chatteur' || cq.data === 'role_posteur') {
+          if (!state.va) { continue; }
+          const role = cq.data.replace('role_', '');
+
+          await api('editMessageText', {
+            chat_id: cq.message.chat.id,
+            message_id: cq.message.message_id,
+            text: `👥 VA : ${role === 'posteur' ? '✍️ Posteur' : '💬 Chatteur'} ✅`,
+            parse_mode: 'Markdown'
+          });
+
+          if (role === 'chatteur') {
+            // Chatteur : lien direct → Twitter {va}
+            const sourceName = `Twitter ${state.va}`;
+            await createLink(userId, state.canal, sourceName, { from: cq.from }, 'adspower');
+          } else {
+            // Posteur : choix du type de lien
+            userState[userId] = { ...state, step: 'waiting_twtype' };
+            await send(userId, '🔗 *Quel lien veux-tu ?*', {
+              reply_markup: { inline_keyboard: [
+                [{ text: '📝 Bio', callback_data: 'twtype_bio' }],
+                [{ text: '📌 Pin post', callback_data: 'twtype_pin' }],
+                [{ text: '🔥 CTA', callback_data: 'twtype_cta' }]
+              ]}
+            });
+          }
+        }
+
+        // Type de lien pour VA posteur Twitter
+        else if (cq.data.startsWith('twtype_')) {
+          if (!state.va) { continue; }
+          const type = cq.data.replace('twtype_', '');
+          const typeLabel = type === 'bio' ? '📝 Bio' : type === 'pin' ? '📌 Pin post' : '🔥 CTA';
+
+          await api('editMessageText', {
+            chat_id: cq.message.chat.id,
+            message_id: cq.message.message_id,
+            text: `🔗 Lien : ${typeLabel} ✅`,
+            parse_mode: 'Markdown'
+          });
+
+          let sourceName;
+          if (type === 'bio')      sourceName = `Twitter ${state.va}`;
+          else if (type === 'pin') sourceName = `Twitter pin post ${state.va}`;
+          else                     sourceName = `Twitter CTA commentaire ${state.va}`;
+
+          await createLink(userId, state.canal, sourceName, { from: cq.from }, 'adspower');
         }
 
         continue;
@@ -536,6 +586,19 @@ async function poll() {
         continue;
       }
 
+      // Twitter (AdsPower) : nom du VA → choix posteur / chatteur
+      if (state.step === 'waiting_va_twitter') {
+        const va = text.replace(/\s+/g, ' ').trim().toLowerCase();
+        userState[userId] = { ...state, va, step: 'waiting_role' };
+        await send(userId, '👥 *Le VA est :*', {
+          reply_markup: { inline_keyboard: [
+            [{ text: '✍️ Posteur', callback_data: 'role_posteur' }],
+            [{ text: '💬 Chatteur', callback_data: 'role_chatteur' }]
+          ]}
+        });
+        continue;
+      }
+
       if (state.step === 'waiting_compte') {
         userState[userId] = { ...state, compte: text.replace(/\s+/g, '').toLowerCase(), step: 'waiting_va' };
         await send(userId, '🧑‍💼 *Tape le nom du VA :*\n_(ex: arsenne, noctis...)_');
@@ -544,7 +607,7 @@ async function poll() {
 
       if (state.step === 'waiting_va') {
         const va = text.replace(/\s+/g, '').toLowerCase();
-        const supportTag = state.support === 'iremotech' ? 'ir' : state.support === 'adspower' ? 'adspower' : 'ali';
+        const supportTag = state.support === 'iremotech' ? 'ir' : 'ali';
         const sourceName = `${state.source}_${supportTag}_${state.compte}_${va}`;
         await createLink(userId, state.canal, sourceName, msg, state.support);
         continue;
