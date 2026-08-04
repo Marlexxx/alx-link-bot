@@ -366,8 +366,8 @@ async function poll() {
           });
 
           if (role === 'chatteur') {
-            // Chatteur : lien direct → Twitter {va}
-            const sourceName = `Twitter ${state.va}`;
+            // Chatteur : lien direct → Twitter DM {va}
+            const sourceName = `Twitter DM ${state.va}`;
             await createLink(userId, state.canal, sourceName, { from: cq.from }, 'adspower');
           } else {
             // Posteur : choix du type de lien
@@ -588,7 +588,7 @@ async function poll() {
 
       // Twitter (AdsPower) : nom du VA → choix posteur / chatteur
       if (state.step === 'waiting_va_twitter') {
-        const va = text.replace(/\s+/g, ' ').trim().toLowerCase();
+        const va = text.replace(/\s+/g, ' ').trim();
         userState[userId] = { ...state, va, step: 'waiting_role' };
         await send(userId, '👥 *Le VA est :*', {
           reply_markup: { inline_keyboard: [
