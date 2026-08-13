@@ -291,6 +291,7 @@ async function poll() {
             reply_markup: { inline_keyboard: [
               [{ text: '🔵 Ali Remote', callback_data: 'support_ali' }],
               [{ text: '🟢 Iremotech', callback_data: 'support_iremotech' }],
+              [{ text: '🟣 Geelark', callback_data: 'support_geelark' }],
               [{ text: '🐦 AdsPower (Twitter)', callback_data: 'support_adspower' }],
               [{ text: '⚪ Autre (saisie libre)', callback_data: 'support_autre' }]
             ]}
@@ -302,7 +303,7 @@ async function poll() {
           const support = cq.data.replace('support_', '');
           userState[userId] = { ...state, support };
 
-          const supportLabel = support === 'ali' ? '🔵 Ali Remote' : support === 'iremotech' ? '🟢 Iremotech' : support === 'adspower' ? '🐦 AdsPower (Twitter)' : '⚪ Autre';
+          const supportLabel = support === 'ali' ? '🔵 Ali Remote' : support === 'iremotech' ? '🟢 Iremotech' : support === 'geelark' ? '🟣 Geelark' : support === 'adspower' ? '🐦 AdsPower (Twitter)' : '⚪ Autre';
 
           await api('editMessageText', {
             chat_id: cq.message.chat.id,
@@ -511,6 +512,9 @@ async function poll() {
           '*Exemples (Iremotech) :*\n' +
           '• `insta_ir_lunafd_noctis`\n' +
           '• `facebook_ir_lunapage_arsenne`\n\n' +
+          '*Exemples (Geelark) :*\n' +
+          '• `insta_gk_lunafd_arsenne`\n' +
+          '• `thread_gk_lunaqtxr_noctis`\n\n' +
           '*Règles :*\n' +
           '— tout en minuscules, pas d\'espaces\n' +
           '— format : source\\_support\\_compte\\_va\n' +
@@ -539,6 +543,7 @@ async function poll() {
             reply_markup: { inline_keyboard: [
               [{ text: '🔵 Ali Remote', callback_data: 'support_ali' }],
               [{ text: '🟢 Iremotech', callback_data: 'support_iremotech' }],
+              [{ text: '🟣 Geelark', callback_data: 'support_geelark' }],
               [{ text: '🐦 AdsPower (Twitter)', callback_data: 'support_adspower' }],
               [{ text: '⚪ Autre (saisie libre)', callback_data: 'support_autre' }]
             ]}
@@ -607,7 +612,7 @@ async function poll() {
 
       if (state.step === 'waiting_va') {
         const va = text.replace(/\s+/g, '').toLowerCase();
-        const supportTag = state.support === 'iremotech' ? 'ir' : 'ali';
+        const supportTag = state.support === 'iremotech' ? 'ir' : state.support === 'geelark' ? 'gk' : 'ali';
         let compte = state.compte;
         let note = '';
         let sourceName = `${state.source}_${supportTag}_${compte}_${va}`;
