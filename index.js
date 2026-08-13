@@ -119,7 +119,7 @@ function taapitCreate(originalUrl, name) {
     });
     const req = https.request({
       hostname: 'api.taap.it',
-      path: '/v1/links',
+      path: '/v1/links/',   // slash final obligatoire, sinon 307 redirect
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${TAAPIT_API_KEY}`,
@@ -347,7 +347,10 @@ async function poll() {
                 `_Analytics + conversion tracking dispo sur ton espace Taap.it._`
               );
             } else {
-              const errMsg = (r.data && (r.data.message || r.data.error)) || `HTTP ${r.status}`;
+              const errMsg =
+                (r.data && r.data.error && r.data.error.message) ||
+                (r.data && r.data.message) ||
+                `HTTP ${r.status}`;
               await send(userId, `❌ Taap.it a refusé la création : ${errMsg}`);
             }
           } catch (err) {
