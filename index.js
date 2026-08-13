@@ -26,6 +26,11 @@ const LABELS = {
   sophia: '🩵 Sophia',
 };
 
+// ─── TAAP.IT (raccourcisseur + analytics optionnel) ──────────────────────────
+const TAAPIT_API_KEY = process.env.TAAPIT_API_KEY;
+// Plateformes → libellé lisible pour le titre affiché dans le dashboard Taap.it
+const PLATFORM_LABELS = { insta: 'Instagram', thread: 'Thread', facebook: 'Facebook' };
+
 // ─── STOCKAGE (Volume Railway /data) ──────────────────────────────────────────
 const DATA_DIR = process.env.DATA_DIR || '/data';
 const ACCESS_FILE = path.join(DATA_DIR, 'access.json');
@@ -74,6 +79,11 @@ const userState = {};
 const processedMessages = new Set();
 let offset = 0;
 
+// Liens créés en attente de conversion Taap.it : token court → { url, name }
+// (le callback_data Telegram est limité à 64 octets, on ne peut pas y mettre l'URL)
+const taapitJobs = {};
+let taapitCounter = 0;
+
 // ─── API TELEGRAM ────────────────────────────────────────────────────────────
 function api(method, params = {}) {
   return new Promise((resolve, reject) => {
@@ -96,6 +106,40 @@ function api(method, params = {}) {
 
 const send = (chatId, text, extra = {}) =>
   api('sendMessage', { chat_id: chatId, text, parse_mode: 'Markdown', ...extra });
+
+// ─── API TAAP.IT ─────────────────────────────────────────────────────────────
+// Crée un lien court Taap.it à partir d'une URL de destination (ici le lien t.me).
+// Résout { status, data }. Le domaine reste taap.it par défaut.
+function taapitCreate(originalUrl, name) {
+  return new Promise((resolve, reject) => {
+    const payload = JSON.stringify({
+      original_url: originalUrl,
+      name,
+      enable_conversion_tracking: true
+    });
+    const req = https.request({
+      hostname: 'api.taap.it',
+      path: '/v1/links',
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${TAAPIT_API_KEY}`,
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload)
+      }
+    }, res => {
+      let body = '';
+      res.on('data', c => body += c);
+      res.on('end', () => {
+        let data = null;
+        try { data = JSON.parse(body); } catch { /* réponse non-JSON */ }
+        resolve({ status: res.statusCode, data, raw: body });
+      });
+    });
+    req.on('error', reject);
+    req.write(payload);
+    req.end();
+  });
+}
 
 // ─── ADMIN HANDLERS ──────────────────────────────────────────────────────────
 
@@ -274,6 +318,43 @@ async function poll() {
 
         // Access check for link creation callbacks
         if (!isApproved(userId)) continue;
+
+        // ─── Conversion Taap.it ───
+        if (cq.data.startsWith('taapit_')) {
+          const token = cq.data.replace('taapit_', '');
+          const job = taapitJobs[token];
+          if (!job) {
+            await send(userId, '⚠️ Ce lien n\'est plus convertible (bot redémarré). Recrée-le pour avoir le bouton Taap.it.');
+            continue;
+          }
+          // Retire le bouton pour éviter les double-clics pendant l'appel API
+          await api('editMessageReplyMarkup', {
+            chat_id: cq.message.chat.id,
+            message_id: cq.message.message_id,
+            reply_markup: { inline_keyboard: [] }
+          });
+          await send(userId, '⏳ Conversion en lien Taap.it...');
+          try {
+            const r = await taapitCreate(job.url, job.name);
+            if (r.status >= 200 && r.status < 300 && r.data) {
+              const shortUrl = r.data.short_url || (r.data.code ? `https://taap.it/${r.data.code}` : null);
+              if (!shortUrl) throw new Error('Réponse Taap.it inattendue');
+              delete taapitJobs[token];
+              await send(userId,
+                `✅ *Lien Taap.it créé !*\n\n` +
+                `🔗 \`${shortUrl}\`\n` +
+                `📊 Dashboard : \`${job.name}\`\n\n` +
+                `_Analytics + conversion tracking dispo sur ton espace Taap.it._`
+              );
+            } else {
+              const errMsg = (r.data && (r.data.message || r.data.error)) || `HTTP ${r.status}`;
+              await send(userId, `❌ Taap.it a refusé la création : ${errMsg}`);
+            }
+          } catch (err) {
+            await send(userId, `❌ Erreur Taap.it : ${err.message}`);
+          }
+          continue;
+        }
 
         // Channel selection
         if (CHANNELS[cq.data]) {
@@ -635,7 +716,9 @@ async function poll() {
           }
         }
 
-        await createLink(userId, state.canal, sourceName, msg, state.support, note);
+        // Titre affiché dans le dashboard Taap.it : compte + plateforme
+        const taapitName = `${state.compte} — ${PLATFORM_LABELS[state.source] || state.source}`;
+        await createLink(userId, state.canal, sourceName, msg, state.support, note, taapitName);
         continue;
       }
 
@@ -652,7 +735,7 @@ async function poll() {
   }
 }
 
-async function createLink(userId, canal, sourceName, msg, support, note = '') {
+async function createLink(userId, canal, sourceName, msg, support, note = '', taapitName = '') {
   const isTwitter = support === 'adspower';
   const channelId = isTwitter ? TWITTER_CHANNELS[canal] : CHANNELS[canal];
 
@@ -687,13 +770,27 @@ async function createLink(userId, canal, sourceName, msg, support, note = '') {
     const link = result.result.invite_link;
     const label = LABELS[canal] + (isTwitter ? ' 🐦 Twitter' : '');
 
+    // Bouton optionnel de conversion Taap.it (seulement si une clé API est configurée)
+    let extra = {};
+    if (TAAPIT_API_KEY) {
+      const token = `t${++taapitCounter}`;
+      taapitJobs[token] = { url: link, name: taapitName || sourceName };
+      // Garde la map bornée : oublie les vieux jobs non convertis
+      const oldToken = `t${taapitCounter - 500}`;
+      if (taapitJobs[oldToken]) delete taapitJobs[oldToken];
+      extra = { reply_markup: { inline_keyboard: [
+        [{ text: '🔗 Convertir en lien Taap.it', callback_data: `taapit_${token}` }]
+      ]}};
+    }
+
     await send(userId,
       `✅ *Lien créé !*\n\n` +
       `🔗 \`${link}\`\n` +
       `📌 Source : \`${sourceName}\`\n` +
       `👤 Canal : ${label}\n\n` +
       `_Partage ce lien — les subs seront trackés automatiquement._` +
-      note
+      note,
+      extra
     );
 
     console.log(`✅ Lien créé: ${sourceName} (${canal}) par ${msg.from.username || userId}`);
@@ -717,6 +814,7 @@ async function start() {
   console.log('👑 Admins:', ADMIN_IDS.length ? ADMIN_IDS.join(', ') : 'AUCUN — configure ADMIN_IDS');
   console.log('📢 Canaux:', Object.entries(CHANNELS).filter(([,v]) => v).map(([k]) => k).join(', ') || 'AUCUN');
   console.log('🐦 Canaux Twitter:', Object.entries(TWITTER_CHANNELS).filter(([,v]) => v).map(([k]) => k).join(', ') || 'AUCUN');
+  console.log('🔗 Taap.it:', TAAPIT_API_KEY ? 'activé (bouton de conversion dispo)' : 'désactivé (pas de TAAPIT_API_KEY)');
 
   const wb = await api('deleteWebhook', { drop_pending_updates: false });
   if (wb.ok) console.log('🌐 Webhook supprimé — polling actif');
