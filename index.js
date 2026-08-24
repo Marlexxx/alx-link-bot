@@ -11,6 +11,7 @@ const CHANNELS = {
   luna:   process.env.LUNA_CHANNEL_ID,
   juliaa: process.env.JULIA_CHANNEL_ID,
   sophia: process.env.SOPHIA_CHANNEL_ID,
+  leila:  process.env.LEILA_CHANNEL_ID,
 };
 
 // Canaux Twitter (séparés) — utilisés quand le support est AdsPower
@@ -18,12 +19,14 @@ const TWITTER_CHANNELS = {
   luna:   process.env.LUNA_TWITTER_CHANNEL_ID,
   juliaa: process.env.JULIA_TWITTER_CHANNEL_ID,
   sophia: process.env.SOPHIA_TWITTER_CHANNEL_ID,
+  leila:  process.env.LEILA_TWITTER_CHANNEL_ID,
 };
 
 const LABELS = {
   luna:   '🍓 Luna',
   juliaa: '💜 Juliaa',
   sophia: '🩵 Sophia',
+  leila:  '🌸 Leila',
 };
 
 // ─── TAAP.IT (raccourcisseur + analytics optionnel) ──────────────────────────
@@ -635,8 +638,12 @@ async function poll() {
           continue;
         }
 
+        // 2 boutons par ligne (au-delà de 3 canaux, une seule ligne devient illisible sur mobile)
+        const rows = [];
+        for (let i = 0; i < buttons.length; i += 2) rows.push(buttons.slice(i, i + 2));
+
         await send(userId, '🔗 *Nouveau lien de tracking*\n\nPour quel canal ?', {
-          reply_markup: { inline_keyboard: [buttons] }
+          reply_markup: { inline_keyboard: rows }
         });
         continue;
       }
